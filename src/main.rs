@@ -33,7 +33,7 @@ async fn process_reputation(reputation: Reputation, db: &PgPool) {
         ,reputation.reputation_score
         ,reputation.port)
         .execute(db).await {
-            Ok(_) => println!("Inserted record"),
+            Ok(_) => (),
             Err(e) => println!("Error inserting record: {}", e ),
         }
 }
@@ -129,7 +129,7 @@ async fn read_gz_file<P: AsRef<Path>>(path: P, db: PgPool) -> std::io::Result<()
 #[tokio::main]
 async fn main() {
     let db = PgPool::connect(DB_URL).await.unwrap();
-    read_gz_file("cut.xml.gz", db).await.unwrap();
+    read_gz_file("data.xml.gz", db).await.unwrap();
 }
 #[derive(Clone, Deserialize, Debug)]
 struct Reputation {
@@ -141,10 +141,23 @@ struct Reputation {
     reputation_key: String,
     proto: Option<i32>,
     family: Option<String>,
-    asn: i32,
+    #[serde(deserialize_with = "from_str_asn")]
+    asn: Option<i32>,
     category: String,
     reputation_score: i32,
     port: Option<i32>,
+}
+
+fn from_str_asn<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s == "NA" {
+        Ok(None)
+    } else {
+        Ok(Some(s.parse::<i32>().unwrap()))
+    }
 }
 
 fn from_timestamp<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
@@ -175,6 +188,26 @@ fn test_deserialize_reputation() {
     let res: Result<Reputation, _> = quick_xml::de::from_str(data);
     match res {
         Ok(rep) => assert_eq!(rep.cc, "US"),
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn test_another_example() {
+    let data = "<reputation>
+        <stamp>2023-07-30 14:04:30</stamp>
+        <addr>178.52.163.60</addr>
+        <notes>dsthost: hzmksreiuojy.ru; destination_port_numbers: 80;</notes>
+        <cc>SY</cc>
+        <reputation_key>A1B0C1D7E0F0G0H0I0J0K0</reputation_key>
+        <family>andromeda</family>
+        <asn>NA</asn>
+        <category>bot</category>
+        <reputation_score>2</reputation_score>
+    </reputation>";
+    let res: Result<Reputation, _> = quick_xml::de::from_str(data);
+    match res {
+        Ok(rep) => assert_eq!(rep.cc, "SY"),
         Err(_) => assert!(false),
     }
 }
