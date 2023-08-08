@@ -1,19 +1,23 @@
 use flate2::read::GzDecoder;
-use quick_xml::de::{Deserializer, from_str};
+use quick_xml::de::from_str;
 use quick_xml::events::Event;
-use quick_xml::se::to_string;
 use quick_xml::reader::Reader as XmlReader;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use tokio::time::sleep;
+
+extern crate prog_rs;
+
+use prog_rs::prelude::*;
 
 fn process_reputation(reputation: Reputation) {
     // Do something with record
-    println!("{:?}", reputation);
+    // println!("{:?}", reputation);
 }
 
-fn parse_xml(reader: BufReader<GzDecoder<File>>) -> quick_xml::Result<()> {
+fn parse_xml(reader: BufReader<GzDecoder<prog_rs::FileProgress>>) -> quick_xml::Result<()> {
     let mut reader = XmlReader::from_reader(reader);
     reader.trim_text(true);
 
@@ -30,7 +34,9 @@ fn parse_xml(reader: BufReader<GzDecoder<File>>) -> quick_xml::Result<()> {
                 loop {
                     match reader.read_event_into(&mut event_buf) {
                         Ok(Event::Text(e)) => txt.extend(e.escape_ascii()),
-                        Ok(Event::End(ref e)) if e.name() == quick_xml::name::QName(b"reputation") => {
+                        Ok(Event::End(ref e))
+                            if e.name() == quick_xml::name::QName(b"reputation") =>
+                        {
                             txt.extend(b"</reputation>");
                             break;
                         }
@@ -55,16 +61,22 @@ fn parse_xml(reader: BufReader<GzDecoder<File>>) -> quick_xml::Result<()> {
                 match from_str(text_string) {
                     Ok(reputation) => process_reputation(reputation),
                     Err(e) => {
-                        println!("Text in current element: {}", std::str::from_utf8(&txt).unwrap());
+                        println!(
+                            "Text in current element: {}",
+                            std::str::from_utf8(&txt).unwrap()
+                        );
                         panic!("Error at position {}: {:?}", reader.buffer_position(), e)
-                    },
+                    }
                 }
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                println!("Text in current element: {}", std::str::from_utf8(&txt).unwrap());
+                println!(
+                    "Text in current element: {}",
+                    std::str::from_utf8(&txt).unwrap()
+                );
                 panic!("Error at position {}: {:?}", reader.buffer_position(), e)
-            },
+            }
             _ => (),
         }
         buf.clear();
@@ -73,7 +85,12 @@ fn parse_xml(reader: BufReader<GzDecoder<File>>) -> quick_xml::Result<()> {
 }
 
 fn read_gz_file<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
-    let file = File::open(path)?;
+    let file = File::open(path)
+        .unwrap()
+        .progress()
+        .with_prefix("Reading file")
+        .with_output_stream(prog_rs::OutputStream::StdErr)
+        .with_bar_position(prog_rs::BarPosition::Right);
     let decoder = GzDecoder::new(file);
     let reader = BufReader::new(decoder);
 
@@ -86,15 +103,15 @@ fn read_gz_file<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
 }
 
 fn main() {
-    read_gz_file("cut.xml.gz").unwrap();
+    // read_gz_file("cut.xml.gz").unwrap();
+    read_gz_file("data.xml.gz").unwrap();
 }
 
-
 #[derive(Deserialize, Debug)]
-struct Reputation{
+struct Reputation {
     stamp: String,
     addr: String,
-    notes: String,
+    notes: Option<String>,
     cc: String,
     reputation_key: String,
     proto: Option<String>,
@@ -102,12 +119,11 @@ struct Reputation{
     asn: String,
     category: String,
     reputation_score: String,
-    port: String,
-
+    port: Option<String>,
 }
 
 #[test]
-fn test_deserialize_xml(){
+fn test_deserialize_xml() {
     let data = "<repfeed version=\"2\" generated=\"2023-07-31 14:00:00\">
         <reputations>
             <reputation>
@@ -127,7 +143,7 @@ fn test_deserialize_xml(){
 }
 
 #[test]
-fn test_deserialize_reputation(){
+fn test_deserialize_reputation() {
     let data = "<reputation>
         <stamp>2023-07-30 14:00:00</stamp>
         <addr>173.231.184.122</addr>
@@ -140,7 +156,7 @@ fn test_deserialize_reputation(){
         <reputation_score>25</reputation_score>
         <port>80</port>
     </reputation>";
-    
+
     let res: Result<Reputation, _> = quick_xml::de::from_str(data);
     match res {
         Ok(rep) => assert_eq!(rep.cc, "US"),
