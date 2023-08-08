@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+chrono = { version = "0.4.26", features = ["serde"] }
 flate2 = "1.0.26"
 indicatif = "0.17.6"
 prog_rs = "0.2.0"
 quick-xml = { version = "0.30.0", features = ["tokio", "serde", "serde-types", "serialize"] }
 serde = "1.0.183"
-sqlx = { version = "0.7.1", features = ["runtime-tokio", "postgres", "sqlite"] }
+sqlx = { version = "0.7.1", features = ["runtime-tokio", "postgres", "sqlite", "time", "ipnetwork", "chrono"] }
 tokio = { version = "1.29.1", features = ["full"] }
