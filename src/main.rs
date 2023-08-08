@@ -6,18 +6,35 @@ use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use tokio::time::sleep;
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool, Pool};
+
+const DB_URL: &str = "sqlite://sqlite.db";
+const DB_URL2: &str = "postgres://postgres:postgres@localhost:5432/postgres";
 
 extern crate prog_rs;
 
 use prog_rs::prelude::*;
 
-fn process_reputation(reputation: Reputation) {
+async fn process_reputation(reputation: Reputation, db: &SqlitePool) {
     // Do something with record
     // println!("{:?}", reputation);
+    // Insert the data into our database
+    let result = sqlx::query("INSERT INTO reputation (stamp, addr, notes, cc, reputation_key, proto, family, asn, category, reputation_score, port) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(reputation.stamp)
+        .bind(reputation.addr)
+        .bind(reputation.notes)
+        .bind(reputation.cc)
+        .bind(reputation.reputation_key)
+        .bind(reputation.proto)
+        .bind(reputation.family)
+        .bind(reputation.asn)
+        .bind(reputation.category)
+        .bind(reputation.reputation_score)
+        .bind(reputation.port)
+        .execute( db).await.unwrap();
 }
 
-fn parse_xml(reader: BufReader<GzDecoder<prog_rs::FileProgress>>) -> quick_xml::Result<()> {
+async fn parse_xml(reader: BufReader<GzDecoder<prog_rs::FileProgress>>, db: Pool<Sqlite>) -> quick_xml::Result<()> {
     let mut reader = XmlReader::from_reader(reader);
     reader.trim_text(true);
 
@@ -59,7 +76,7 @@ fn parse_xml(reader: BufReader<GzDecoder<prog_rs::FileProgress>>) -> quick_xml::
                 }
                 let text_string = std::str::from_utf8(&txt).unwrap();
                 match from_str(text_string) {
-                    Ok(reputation) => process_reputation(reputation),
+                    Ok(reputation) => process_reputation(reputation, &db).await,
                     Err(e) => {
                         println!(
                             "Text in current element: {}",
@@ -84,7 +101,7 @@ fn parse_xml(reader: BufReader<GzDecoder<prog_rs::FileProgress>>) -> quick_xml::
     Ok(())
 }
 
-fn read_gz_file<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
+async fn read_gz_file<P: AsRef<Path>>(path: P, db: Pool<Sqlite> ) -> std::io::Result<()> {
     let file = File::open(path)
         .unwrap()
         .progress()
@@ -94,7 +111,7 @@ fn read_gz_file<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
     let decoder = GzDecoder::new(file);
     let reader = BufReader::new(decoder);
 
-    match parse_xml(reader) {
+    match parse_xml(reader, db).await {
         Ok(_) => println!("Finished processing the file."),
         Err(e) => eprintln!("Failed to process file: {}", e),
     }
@@ -102,11 +119,37 @@ fn read_gz_file<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
     Ok(())
 }
 
-fn main() {
-    // read_gz_file("cut.xml.gz").unwrap();
-    read_gz_file("data.xml.gz").unwrap();
-}
 
+#[tokio::main]
+async fn main() {
+    if !Sqlite::database_exists(DB_URL).await.unwrap_or(false) {
+        println!("Creating database {}", DB_URL);
+        match Sqlite::create_database(DB_URL).await {
+            Ok(_) => println!("Create db success"),
+            Err(error) => panic!("error: {}", error),
+        }
+    } else {
+        println!("Database already exists");
+    }
+    
+    let db = SqlitePool::connect(DB_URL).await.unwrap();
+    let result = sqlx::query("CREATE TABLE IF NOT EXISTS reputation (id INTEGER PRIMARY KEY NOT NULL, 
+    stamp VARCHAR(250) NOT NULL,
+    addr VARCHAR(250) NOT NULL,
+    notes VARCHAR(250) NOT NULL,
+    cc VARCHAR(250) NOT NULL,
+    reputation_key VARCHAR(250) NOT NULL,
+    proto VARCHAR(250),
+    family VARCHAR(250),
+    asn VARCHAR(250) NOT NULL,
+    category VARCHAR(250) NOT NULL,
+    reputation_score VARCHAR(250) NOT NULL,
+    port VARCHAR(250));").execute(&db).await.unwrap();
+    println!("Create user table result: {:?}", result);
+//     // read_gz_file("cut.xml.gz").unwrap();
+    read_gz_file("cut.xml.gz", db).await.unwrap();
+
+}
 #[derive(Deserialize, Debug)]
 struct Reputation {
     stamp: String,
