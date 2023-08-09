@@ -1,4 +1,4 @@
-    CREATE TABLE dave_team_cymru_repfeed (
+    CREATE TABLE sink.dave_team_cymru_repfeed (
     stamp timestamp without time zone,
     addr inet,
     notes text,

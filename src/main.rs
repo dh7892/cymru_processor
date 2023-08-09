@@ -20,7 +20,7 @@ async fn process_reputation(reputation: Reputation, db: &PgPool) {
     // Do something with record
     // println!("{:?}", reputation);
     // Insert the data into our database
-    match sqlx::query!(r#"INSERT INTO dave_team_cymru_repfeed 
+    match sqlx::query!(r#"INSERT INTO sink.dave_team_cymru_repfeed 
     (   
         stamp,
         addr,
