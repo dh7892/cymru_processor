@@ -17,3 +17,10 @@ Cargo.lock
 # Added by cargo
 
 /target
+moo.xml
+data.xml.gz
+repfeed_202307311400.xml
+.gitignore
+.gitignore
+sqlite.db-wal
+sqlite.db-shm
