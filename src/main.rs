@@ -1,11 +1,11 @@
-use chrono::{DateTime, NaiveDateTime, ParseError};
+use chrono::{DateTime, NaiveDateTime};
 use flate2::read::GzDecoder;
 use quick_xml::de::from_str;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader as XmlReader;
 use serde::Deserialize;
 use sqlx::types::ipnetwork::IpNetwork;
-use sqlx::{migrate::MigrateDatabase, PgPool, Pool, Sqlite, SqlitePool};
+use sqlx::PgPool;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -16,11 +16,12 @@ extern crate prog_rs;
 
 use prog_rs::prelude::*;
 
-async fn process_reputation(reputation: Reputation, db: &PgPool) {
-    // Do something with record
-    // println!("{:?}", reputation);
-    // Insert the data into our database
-    match sqlx::query!(r#"INSERT INTO sink.dave_team_cymru_repfeed 
+// Given a vec of representations, insert them into the database in an effieicnt
+// transaction
+async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx::Result<()> {
+    let mut transaction = db.begin().await?;
+
+    let mut sql = r#"INSERT INTO sink.dave_team_cymru_repfeed 
     (   
         stamp,
         addr,
@@ -44,33 +45,70 @@ async fn process_reputation(reputation: Reputation, db: &PgPool) {
         reputation_score,
         port
      )
-     VALUES 
-     ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)"#
-        ,reputation.stamp
-        ,reputation.addr
-        ,reputation.notes
-        ,reputation.cc
-        ,reputation.reputation_key.DaysInFeed
-        ,reputation.reputation_key.CountOfActiveDetections
-        ,reputation.reputation_key.CountOfPassiveDetections
-        ,reputation.reputation_key.DetectionType
-        ,reputation.reputation_key.SSLUsage
-        ,reputation.reputation_key.ControllerInstructionDecoded
-        ,reputation.reputation_key.DDoSCommandObserved
-        ,reputation.reputation_key.NonStandardPort
-        ,reputation.reputation_key.NumberOfUniqueDomainNamesOnSameIP
-        ,reputation.reputation_key.NumberOfDistinctControllersOnSameIP
-        ,reputation.reputation_key.OtherMaliciousControllersInSameDay
-        ,reputation.proto
-        ,reputation.family
-        ,reputation.asn
-        ,reputation.category
-        ,reputation.reputation_score
-        ,reputation.port)
-        .execute(db).await {
-            Ok(_) => (),
-            Err(e) => println!("Error inserting record: {}", e ),
-        }
+     VALUES "#
+        .to_string();
+
+    let num_pararms = 21;
+
+    for (index, _) in reputations.iter().enumerate() {
+        sql.push_str(&format!("( ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}),",
+        index * num_pararms + 1,
+        index * num_pararms + 2,
+        index * num_pararms + 3,
+        index * num_pararms + 4,
+        index * num_pararms + 5,
+        index * num_pararms + 6,
+        index * num_pararms + 7,
+        index * num_pararms + 8,
+        index * num_pararms + 9,
+        index * num_pararms + 10,
+        index * num_pararms + 11,
+        index * num_pararms + 12,
+        index * num_pararms + 13,
+        index * num_pararms + 14,
+        index * num_pararms + 15,
+        index * num_pararms + 16,
+        index * num_pararms + 17,
+        index * num_pararms + 18,
+        index * num_pararms + 19,
+        index * num_pararms + 20,
+        index * num_pararms + 21,
+        ));
+    }
+    // Remove the trailing comma
+    sql.pop();
+
+    let mut query = sqlx::query(&sql);
+
+    for rep in reputations {
+        query = query.bind(&rep.stamp);
+        query = query.bind(&rep.addr);
+        query = query.bind(&rep.notes);
+        query = query.bind(&rep.cc);
+        query = query.bind(&rep.reputation_key.DaysInFeed);
+        query = query.bind(&rep.reputation_key.CountOfActiveDetections);
+        query = query.bind(&rep.reputation_key.CountOfPassiveDetections);
+        query = query.bind(&rep.reputation_key.DetectionType);
+        query = query.bind(&rep.reputation_key.SSLUsage);
+        query = query.bind(&rep.reputation_key.ControllerInstructionDecoded);
+        query = query.bind(&rep.reputation_key.DDoSCommandObserved);
+        query = query.bind(&rep.reputation_key.NonStandardPort);
+        query = query.bind(&rep.reputation_key.NumberOfUniqueDomainNamesOnSameIP);
+        query = query.bind(&rep.reputation_key.NumberOfDistinctControllersOnSameIP);
+        query = query.bind(&rep.reputation_key.OtherMaliciousControllersInSameDay);
+        query = query.bind(&rep.proto);
+        query = query.bind(&rep.family);
+        query = query.bind(&rep.asn);
+        query = query.bind(&rep.category);
+        query = query.bind(&rep.reputation_score);
+        query = query.bind(&rep.port);
+    }
+
+    query.execute(&mut *transaction).await?;
+
+    transaction.commit().await?;
+
+    Ok(())
 }
 
 async fn parse_xml(
@@ -83,6 +121,8 @@ async fn parse_xml(
     let mut buf = Vec::new();
     let mut txt = Vec::new();
     let mut counter = 0;
+    let mut reputations = Vec::new();
+    let batch_size = 1000;
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) if e.name() == quick_xml::name::QName(b"reputation") => {
@@ -91,6 +131,13 @@ async fn parse_xml(
                 counter += 1;
                 let mut event_buf = Vec::new();
                 loop {
+                    if reputations.len() == batch_size {
+                        match process_reputations(&reputations, &db).await {
+                            Ok(_) => (),
+                            Err(e) => println!("Error processing batch {}: {}", counter, e),
+                        }
+                        reputations.clear();
+                    }
                     match reader.read_event_into(&mut event_buf) {
                         Ok(Event::Text(e)) => txt.extend(e.escape_ascii()),
                         Ok(Event::End(ref e))
@@ -118,7 +165,9 @@ async fn parse_xml(
                 }
                 let text_string = std::str::from_utf8(&txt).unwrap();
                 match from_str(text_string) {
-                    Ok(reputation) => process_reputation(reputation, &db).await,
+                    Ok(reputation) => {
+                        reputations.push(reputation);
+                    }
                     Err(e) => {
                         println!(
                             "Text in current element: {}",
@@ -138,6 +187,14 @@ async fn parse_xml(
             _ => (),
         }
         buf.clear();
+    }
+    // Clear final batch (may not be a full batch)
+    if !reputations.is_empty() {
+        match process_reputations(&reputations, &db).await {
+            Ok(_) => (),
+            Err(e) => println!("Error processing final batch: {}", e),
+        }
+        reputations.clear();
     }
     Ok(())
 }
@@ -160,11 +217,6 @@ async fn read_gz_file<P: AsRef<Path>>(path: P, db: PgPool) -> std::io::Result<()
     Ok(())
 }
 
-#[tokio::main]
-async fn main() {
-    let db = PgPool::connect(DB_URL).await.unwrap();
-    read_gz_file("data.xml.gz", db).await.unwrap();
-}
 #[derive(Clone, Deserialize, Debug)]
 struct Reputation {
     #[serde(deserialize_with = "from_timestamp")]
@@ -259,6 +311,12 @@ where
     let naive = NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").unwrap();
     let datetime: DateTime<chrono::offset::Utc> = DateTime::from_utc(naive, chrono::offset::Utc);
     Ok(datetime.naive_utc())
+}
+
+#[tokio::main]
+async fn main() {
+    let db = PgPool::connect(DB_URL).await.unwrap();
+    read_gz_file("data.xml.gz", db).await.unwrap();
 }
 
 #[test]
