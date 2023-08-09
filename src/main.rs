@@ -10,8 +10,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-const DB_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
-
 extern crate prog_rs;
 
 use prog_rs::prelude::*;
@@ -340,8 +338,9 @@ where
 
 #[tokio::main]
 async fn main() {
-    let db = PgPool::connect(DB_URL).await.unwrap();
-    read_gz_file("data.xml.gz", db).await.unwrap();
+    let db_url = std::env::var("DATABASE_URL").expect("DB_URL must be set");
+    let db = PgPool::connect(&db_url).await.unwrap();
+    read_gz_file("cut.xml.gz", db).await.unwrap();
 }
 
 #[test]
