@@ -124,7 +124,6 @@ async fn parse_xml(
                             "Text in current element: {}",
                             std::str::from_utf8(&txt).unwrap()
                         );
-                        panic!("Error at position {}: {:?}", reader.buffer_position(), e)
                     }
                 }
             }
