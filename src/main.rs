@@ -9,6 +9,7 @@ use sqlx::PgPool;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use url::form_urlencoded;
 
 extern crate prog_rs;
 
@@ -233,6 +234,7 @@ struct Reputation {
 }
 
 #[derive(Clone, Debug, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "sink.DetectionType")]
 enum DetectionType {
     other = 0,
     netflow = 1,
@@ -338,7 +340,22 @@ where
 
 #[tokio::main]
 async fn main() {
-    let db_url = std::env::var("DATABASE_URL").expect("DB_URL must be set");
+    // Fetch the environment variables
+    let db_user = std::env::var("DB_USER").expect("DB_USER must be set");
+    let db_pass = std::env::var("DB_PASS").expect("DB_PASS must be set");
+    let db_host = std::env::var("DB_HOST").expect("DB_HOST must be set");
+    let db_port = "5432";
+    let db_name = "kynd";
+
+    // URL-encode the username and password
+    let encoded_user = form_urlencoded::byte_serialize(db_user.as_bytes()).collect::<String>();
+    let encoded_pass = form_urlencoded::byte_serialize(db_pass.as_bytes()).collect::<String>();
+
+    // Construct the connection string
+    let db_url = format!(
+        "postgres://{}:{}@{}:{}/{}",
+        encoded_user, encoded_pass, db_host, db_port, db_name
+    );
     let db = PgPool::connect(&db_url).await.unwrap();
     read_gz_file("cut.xml.gz", db).await.unwrap();
 }

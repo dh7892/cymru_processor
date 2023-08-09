@@ -1,4 +1,4 @@
-CREATE TYPE DetectionType AS ENUM (
+CREATE TYPE sink.DetectionType AS ENUM (
     'other',
     'netflow',
     'sinkhole',
@@ -18,7 +18,7 @@ CREATE TABLE sink.dave_team_cymru_repfeed (
     rep_days_in_feed integer,
     rep_count_of_active_detections integer,
     rep_count_of_passive_detections integer,
-    rep_detection_type DetectionType,
+    rep_detection_type sink.DetectionType,
     rep_ssl_usage bool,
     rep_controller_instruction_decoded bool,
     rep_ddos_command_observed bool,
