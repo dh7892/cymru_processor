@@ -80,27 +80,27 @@ async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx
     let mut query = sqlx::query(&sql);
 
     for rep in reputations {
-        query = query.bind(&rep.stamp);
-        query = query.bind(&rep.addr);
+        query = query.bind(rep.stamp);
+        query = query.bind(rep.addr);
         query = query.bind(&rep.notes);
         query = query.bind(&rep.cc);
-        query = query.bind(&rep.reputation_key.DaysInFeed);
-        query = query.bind(&rep.reputation_key.CountOfActiveDetections);
-        query = query.bind(&rep.reputation_key.CountOfPassiveDetections);
-        query = query.bind(&rep.reputation_key.DetectionType);
-        query = query.bind(&rep.reputation_key.SSLUsage);
-        query = query.bind(&rep.reputation_key.ControllerInstructionDecoded);
-        query = query.bind(&rep.reputation_key.DDoSCommandObserved);
-        query = query.bind(&rep.reputation_key.NonStandardPort);
-        query = query.bind(&rep.reputation_key.NumberOfUniqueDomainNamesOnSameIP);
-        query = query.bind(&rep.reputation_key.NumberOfDistinctControllersOnSameIP);
-        query = query.bind(&rep.reputation_key.OtherBadIPsIn24);
-        query = query.bind(&rep.proto);
+        query = query.bind(rep.reputation_key.days_in_feed);
+        query = query.bind(rep.reputation_key.count_of_active_detections);
+        query = query.bind(rep.reputation_key.count_of_passive_detections);
+        query = query.bind(&rep.reputation_key.detection_type);
+        query = query.bind(rep.reputation_key.sslusage);
+        query = query.bind(rep.reputation_key.controller_instruction_decoded);
+        query = query.bind(rep.reputation_key.ddo_scommand_observed);
+        query = query.bind(rep.reputation_key.non_standard_port);
+        query = query.bind(rep.reputation_key.number_of_unique_domain_names_on_same_ip);
+        query = query.bind(rep.reputation_key.number_of_distinct_controllers_on_same_ip);
+        query = query.bind(rep.reputation_key.other_bad_ips_in24);
+        query = query.bind(rep.proto);
         query = query.bind(&rep.family);
-        query = query.bind(&rep.asn);
+        query = query.bind(rep.asn);
         query = query.bind(&rep.category);
-        query = query.bind(&rep.reputation_score);
-        query = query.bind(&rep.port);
+        query = query.bind(rep.reputation_score);
+        query = query.bind(rep.port);
     }
 
     query.execute(&mut *transaction).await?;
@@ -167,7 +167,7 @@ async fn parse_xml(
                     Ok(reputation) => {
                         reputations.push(reputation);
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         println!(
                             "Text in current element: {}",
                             std::str::from_utf8(&txt).unwrap()
@@ -234,32 +234,32 @@ struct Reputation {
 }
 
 #[derive(Clone, Debug, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "sink.DetectionType")]
+#[sqlx(type_name = "sink.DetectionType", rename_all = "snake_case")]
 enum DetectionType {
-    other = 0,
-    netflow = 1,
-    sinkhole = 2,
-    darknet = 3,
-    honeypot = 4,
-    human_verified = 5,
-    active_probe = 6,
-    reported_by_3rd_party = 7,
-    unverified_malware_c2 = 8,
+    Other = 0,
+    Netflow = 1,
+    Sinkhole = 2,
+    Darknet = 3,
+    Honeypot = 4,
+    HumanVerified = 5,
+    ActiveProbe = 6,
+    ReportedBy3rdParty = 7,
+    UnverifiedMalwareC2 = 8,
 }
 
 #[derive(Clone, Debug)]
 struct ReputationKey {
-    DaysInFeed: i32,
-    CountOfActiveDetections: i32,
-    CountOfPassiveDetections: i32,
-    DetectionType: DetectionType,
-    SSLUsage: bool,
-    ControllerInstructionDecoded: bool,
-    DDoSCommandObserved: bool,
-    NonStandardPort: bool,
-    NumberOfUniqueDomainNamesOnSameIP: i32,
-    NumberOfDistinctControllersOnSameIP: i32,
-    OtherBadIPsIn24: i32,
+    days_in_feed: i32,
+    count_of_active_detections: i32,
+    count_of_passive_detections: i32,
+    detection_type: DetectionType,
+    sslusage: bool,
+    controller_instruction_decoded: bool,
+    ddo_scommand_observed: bool,
+    non_standard_port: bool,
+    number_of_unique_domain_names_on_same_ip: i32,
+    number_of_distinct_controllers_on_same_ip: i32,
+    other_bad_ips_in24: i32,
 }
 
 impl<'de> Deserialize<'de> for ReputationKey {
@@ -269,49 +269,51 @@ impl<'de> Deserialize<'de> for ReputationKey {
     {
         let s = String::deserialize(deserializer)?;
         // Split the string on any non-digit character
-        let fields = s.split(|c: char| !c.is_digit(10)).collect::<Vec<&str>>();
+        let fields = s
+            .split(|c: char| !c.is_ascii_digit())
+            .collect::<Vec<&str>>();
         // We should have 11 fields as we have a split on the A at the start
         if fields.len() != 12 {
             return Err(serde::de::Error::custom(
                 "ReputationKey must have 11 fields",
             ));
         }
-        let DaysInFeed = fields[1].parse::<i32>().unwrap();
-        let CountOfActiveDetections = fields[2].parse::<i32>().unwrap();
-        let CountOfPassiveDetections = fields[3].parse::<i32>().unwrap();
-        let DetectionTypeInt = fields[4].parse::<i32>().unwrap();
-        let DetectionType = match DetectionTypeInt {
-            0 => DetectionType::other,
-            1 => DetectionType::netflow,
-            2 => DetectionType::sinkhole,
-            3 => DetectionType::darknet,
-            4 => DetectionType::honeypot,
-            5 => DetectionType::human_verified,
-            6 => DetectionType::active_probe,
-            7 => DetectionType::reported_by_3rd_party,
-            8 => DetectionType::unverified_malware_c2,
+        let days_in_feed = fields[1].parse::<i32>().unwrap();
+        let count_of_active_detections = fields[2].parse::<i32>().unwrap();
+        let count_of_passive_detections = fields[3].parse::<i32>().unwrap();
+        let detection_type_int = fields[4].parse::<i32>().unwrap();
+        let detection_type = match detection_type_int {
+            0 => DetectionType::Other,
+            1 => DetectionType::Netflow,
+            2 => DetectionType::Sinkhole,
+            3 => DetectionType::Darknet,
+            4 => DetectionType::Honeypot,
+            5 => DetectionType::HumanVerified,
+            6 => DetectionType::ActiveProbe,
+            7 => DetectionType::ReportedBy3rdParty,
+            8 => DetectionType::UnverifiedMalwareC2,
             _ => return Err(serde::de::Error::custom("Invalid DetectionType")),
         };
-        let SSLUsage = fields[5].parse::<i32>().unwrap() == 1;
-        let ControllerInstructionDecoded = fields[6].parse::<i32>().unwrap() == 1;
-        let DDoSCommandObserved = fields[7].parse::<i32>().unwrap() == 1;
-        let NonStandardPort = fields[8].parse::<i32>().unwrap() == 1;
-        let NumberOfUniqueDomainNamesOnSameIP = fields[9].parse::<i32>().unwrap();
-        let NumberOfDistinctControllersOnSameIP = fields[10].parse::<i32>().unwrap();
-        let OtherMaliciousControllersInSameDay = fields[11].parse::<i32>().unwrap();
+        let sslusage = fields[5].parse::<i32>().unwrap() == 1;
+        let controller_instruction_decoded = fields[6].parse::<i32>().unwrap() == 1;
+        let ddo_scommand_observed = fields[7].parse::<i32>().unwrap() == 1;
+        let non_standard_port = fields[8].parse::<i32>().unwrap() == 1;
+        let number_of_unique_domain_names_on_same_ip = fields[9].parse::<i32>().unwrap();
+        let number_of_distinct_controllers_on_same_ip = fields[10].parse::<i32>().unwrap();
+        let other_malicious_controllers_in_same_day = fields[11].parse::<i32>().unwrap();
 
         Ok(ReputationKey {
-            DaysInFeed,
-            CountOfActiveDetections,
-            CountOfPassiveDetections,
-            DetectionType,
-            SSLUsage,
-            ControllerInstructionDecoded,
-            DDoSCommandObserved,
-            NonStandardPort,
-            NumberOfUniqueDomainNamesOnSameIP,
-            NumberOfDistinctControllersOnSameIP,
-            OtherBadIPsIn24: OtherMaliciousControllersInSameDay,
+            days_in_feed,
+            count_of_active_detections,
+            count_of_passive_detections,
+            detection_type,
+            sslusage,
+            controller_instruction_decoded,
+            ddo_scommand_observed,
+            non_standard_port,
+            number_of_unique_domain_names_on_same_ip,
+            number_of_distinct_controllers_on_same_ip,
+            other_bad_ips_in24: other_malicious_controllers_in_same_day,
         })
     }
 }
@@ -378,7 +380,7 @@ fn test_deserialize_reputation() {
     let res: Result<Reputation, _> = quick_xml::de::from_str(data);
     match res {
         Ok(rep) => assert_eq!(rep.cc, "US"),
-        Err(_) => assert!(false),
+        Err(_) => panic!("Failed to deserialize reputation"),
     }
 }
 
@@ -398,7 +400,7 @@ fn test_another_example() {
     let res: Result<Reputation, _> = quick_xml::de::from_str(data);
     match res {
         Ok(rep) => assert_eq!(rep.cc, "SY"),
-        Err(_) => assert!(false),
+        Err(_) => panic!("Failed to deserialize reputation"),
     }
 }
 
@@ -407,7 +409,7 @@ fn test_rep_key() {
     let data = "<reputation_key>A1B0C1D7E0F0G0H0I0J0K0</reputation_key>";
     let res: Result<ReputationKey, _> = quick_xml::de::from_str(data);
     match res {
-        Ok(rep) => (),
-        Err(_) => assert!(false),
+        Ok(_) => (),
+        Err(_) => panic!("Failed to deserialize reputation key"),
     }
 }
