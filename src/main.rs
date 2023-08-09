@@ -20,12 +20,47 @@ async fn process_reputation(reputation: Reputation, db: &PgPool) {
     // Do something with record
     // println!("{:?}", reputation);
     // Insert the data into our database
-    match sqlx::query!(r#"INSERT INTO dave_team_cymru_repfeed (stamp, addr, notes, cc, reputation_key, proto, family, asn, category, reputation_score, port) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#
+    match sqlx::query!(r#"INSERT INTO dave_team_cymru_repfeed 
+    (   
+        stamp,
+        addr,
+        notes,
+        cc, 
+        rep_days_in_feed,
+        rep_count_of_active_detections ,
+        rep_count_of_passive_detections,
+        rep_detection_type,
+        rep_ssl_usage,
+        rep_controller_instruction_decoded,
+        rep_ddos_command_observed,
+        rep_non_standard_port,
+        rep_number_of_unique_domain_names_on_same_ip,
+        rep_number_of_distinct_controllers_on_same_ip,
+        rep_other_malicious_controllers_in_same_day,
+        proto,
+        family,
+        asn,
+        category,
+        reputation_score,
+        port
+     )
+     VALUES 
+     ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)"#
         ,reputation.stamp
         ,reputation.addr
         ,reputation.notes
         ,reputation.cc
-        ,reputation.reputation_key
+        ,reputation.reputation_key.DaysInFeed
+        ,reputation.reputation_key.CountOfActiveDetections
+        ,reputation.reputation_key.CountOfPassiveDetections
+        ,reputation.reputation_key.DetectionType
+        ,reputation.reputation_key.SSLUsage
+        ,reputation.reputation_key.ControllerInstructionDecoded
+        ,reputation.reputation_key.DDoSCommandObserved
+        ,reputation.reputation_key.NonStandardPort
+        ,reputation.reputation_key.NumberOfUniqueDomainNamesOnSameIP
+        ,reputation.reputation_key.NumberOfDistinctControllersOnSameIP
+        ,reputation.reputation_key.OtherMaliciousControllersInSameDay
         ,reputation.proto
         ,reputation.family
         ,reputation.asn
@@ -138,7 +173,7 @@ struct Reputation {
     addr: IpNetwork,
     notes: Option<String>,
     cc: String,
-    reputation_key: String,
+    reputation_key: ReputationKey,
     proto: Option<i32>,
     family: Option<String>,
     #[serde(deserialize_with = "from_str_asn")]
@@ -146,6 +181,63 @@ struct Reputation {
     category: String,
     reputation_score: i32,
     port: Option<i32>,
+}
+
+#[derive(Clone, Debug)]
+struct ReputationKey {
+    DaysInFeed: i32,
+    CountOfActiveDetections: i32,
+    CountOfPassiveDetections: i32,
+    DetectionType: i32,
+    SSLUsage: bool,
+    ControllerInstructionDecoded: bool,
+    DDoSCommandObserved: bool,
+    NonStandardPort: bool,
+    NumberOfUniqueDomainNamesOnSameIP: i32,
+    NumberOfDistinctControllersOnSameIP: i32,
+    OtherMaliciousControllersInSameDay: i32,
+}
+
+impl<'de> Deserialize<'de> for ReputationKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        // Split the string on any non-digit character
+        let fields = s.split(|c: char| !c.is_digit(10)).collect::<Vec<&str>>();
+        // We should have 11 fields as we have a split on the A at the start
+        if fields.len() != 12 {
+            return Err(serde::de::Error::custom(
+                "ReputationKey must have 11 fields",
+            ));
+        }
+        let DaysInFeed = fields[1].parse::<i32>().unwrap();
+        let CountOfActiveDetections = fields[2].parse::<i32>().unwrap();
+        let CountOfPassiveDetections = fields[3].parse::<i32>().unwrap();
+        let DetectionType = fields[4].parse::<i32>().unwrap();
+        let SSLUsage = fields[5].parse::<i32>().unwrap() == 1;
+        let ControllerInstructionDecoded = fields[6].parse::<i32>().unwrap() == 1;
+        let DDoSCommandObserved = fields[7].parse::<i32>().unwrap() == 1;
+        let NonStandardPort = fields[8].parse::<i32>().unwrap() == 1;
+        let NumberOfUniqueDomainNamesOnSameIP = fields[9].parse::<i32>().unwrap();
+        let NumberOfDistinctControllersOnSameIP = fields[10].parse::<i32>().unwrap();
+        let OtherMaliciousControllersInSameDay = fields[11].parse::<i32>().unwrap();
+
+        Ok(ReputationKey {
+            DaysInFeed,
+            CountOfActiveDetections,
+            CountOfPassiveDetections,
+            DetectionType,
+            SSLUsage,
+            ControllerInstructionDecoded,
+            DDoSCommandObserved,
+            NonStandardPort,
+            NumberOfUniqueDomainNamesOnSameIP,
+            NumberOfDistinctControllersOnSameIP,
+            OtherMaliciousControllersInSameDay,
+        })
+    }
 }
 
 fn from_str_asn<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
@@ -208,6 +300,16 @@ fn test_another_example() {
     let res: Result<Reputation, _> = quick_xml::de::from_str(data);
     match res {
         Ok(rep) => assert_eq!(rep.cc, "SY"),
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn test_rep_key() {
+    let data = "<reputation_key>A1B0C1D7E0F0G0H0I0J0K0</reputation_key>";
+    let res: Result<ReputationKey, _> = quick_xml::de::from_str(data);
+    match res {
+        Ok(rep) => (),
         Err(_) => assert!(false),
     }
 }
