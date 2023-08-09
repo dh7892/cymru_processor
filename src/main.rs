@@ -37,7 +37,7 @@ async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx
         rep_non_standard_port,
         rep_number_of_unique_domain_names_on_same_ip,
         rep_number_of_distinct_controllers_on_same_ip,
-        rep_other_malicious_controllers_in_same_day,
+        rep_other_bad_ips_in_24,
         proto,
         family,
         asn,
@@ -95,7 +95,7 @@ async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx
         query = query.bind(&rep.reputation_key.NonStandardPort);
         query = query.bind(&rep.reputation_key.NumberOfUniqueDomainNamesOnSameIP);
         query = query.bind(&rep.reputation_key.NumberOfDistinctControllersOnSameIP);
-        query = query.bind(&rep.reputation_key.OtherMaliciousControllersInSameDay);
+        query = query.bind(&rep.reputation_key.OtherBadIPsIn24);
         query = query.bind(&rep.proto);
         query = query.bind(&rep.family);
         query = query.bind(&rep.asn);
@@ -234,19 +234,32 @@ struct Reputation {
     port: Option<i32>,
 }
 
+#[derive(Clone, Debug, Deserialize, sqlx::Type)]
+enum DetectionType {
+    other = 0,
+    netflow = 1,
+    sinkhole = 2,
+    darknet = 3,
+    honeypot = 4,
+    human_verified = 5,
+    active_probe = 6,
+    reported_by_3rd_party = 7,
+    unverified_malware_c2 = 8,
+}
+
 #[derive(Clone, Debug)]
 struct ReputationKey {
     DaysInFeed: i32,
     CountOfActiveDetections: i32,
     CountOfPassiveDetections: i32,
-    DetectionType: i32,
+    DetectionType: DetectionType,
     SSLUsage: bool,
     ControllerInstructionDecoded: bool,
     DDoSCommandObserved: bool,
     NonStandardPort: bool,
     NumberOfUniqueDomainNamesOnSameIP: i32,
     NumberOfDistinctControllersOnSameIP: i32,
-    OtherMaliciousControllersInSameDay: i32,
+    OtherBadIPsIn24: i32,
 }
 
 impl<'de> Deserialize<'de> for ReputationKey {
@@ -266,7 +279,19 @@ impl<'de> Deserialize<'de> for ReputationKey {
         let DaysInFeed = fields[1].parse::<i32>().unwrap();
         let CountOfActiveDetections = fields[2].parse::<i32>().unwrap();
         let CountOfPassiveDetections = fields[3].parse::<i32>().unwrap();
-        let DetectionType = fields[4].parse::<i32>().unwrap();
+        let DetectionTypeInt = fields[4].parse::<i32>().unwrap();
+        let DetectionType = match DetectionTypeInt {
+            0 => DetectionType::other,
+            1 => DetectionType::netflow,
+            2 => DetectionType::sinkhole,
+            3 => DetectionType::darknet,
+            4 => DetectionType::honeypot,
+            5 => DetectionType::human_verified,
+            6 => DetectionType::active_probe,
+            7 => DetectionType::reported_by_3rd_party,
+            8 => DetectionType::unverified_malware_c2,
+            _ => return Err(serde::de::Error::custom("Invalid DetectionType")),
+        };
         let SSLUsage = fields[5].parse::<i32>().unwrap() == 1;
         let ControllerInstructionDecoded = fields[6].parse::<i32>().unwrap() == 1;
         let DDoSCommandObserved = fields[7].parse::<i32>().unwrap() == 1;
@@ -286,7 +311,7 @@ impl<'de> Deserialize<'de> for ReputationKey {
             NonStandardPort,
             NumberOfUniqueDomainNamesOnSameIP,
             NumberOfDistinctControllersOnSameIP,
-            OtherMaliciousControllersInSameDay,
+            OtherBadIPsIn24: OtherMaliciousControllersInSameDay,
         })
     }
 }
