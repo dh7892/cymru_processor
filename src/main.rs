@@ -15,7 +15,7 @@ extern crate prog_rs;
 
 use prog_rs::prelude::*;
 
-// Given a vec of representations, insert them into the database in an effieicnt
+// Given a vec of representations, insert them into the database in an efficient
 // transaction
 async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx::Result<()> {
     let mut transaction = db.begin().await?;
@@ -110,6 +110,8 @@ async fn process_reputations(reputations: &Vec<Reputation>, db: &PgPool) -> sqlx
     Ok(())
 }
 
+// Parse the XML file, accumulating reputations into batches and then
+// insert them into the db in batches.
 async fn parse_xml(
     reader: BufReader<GzDecoder<prog_rs::FileProgress>>,
     db: PgPool,
@@ -198,6 +200,8 @@ async fn parse_xml(
     Ok(())
 }
 
+// Read a gzipped file, wrap a progess bar around it and hand off the parsing
+// to the parse_xml function
 async fn read_gz_file<P: AsRef<Path>>(path: P, db: PgPool) -> std::io::Result<()> {
     let file = File::open(path)
         .unwrap()
@@ -262,6 +266,7 @@ struct ReputationKey {
     other_bad_ips_in24: i32,
 }
 
+// Custom deserializer for the reputation key
 impl<'de> Deserialize<'de> for ReputationKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -272,7 +277,8 @@ impl<'de> Deserialize<'de> for ReputationKey {
         let fields = s
             .split(|c: char| !c.is_ascii_digit())
             .collect::<Vec<&str>>();
-        // We should have 11 fields as we have a split on the A at the start
+        // We should have 12 fields as we have a split on the A at the start
+        // (We don't care about the empty field before the 'A' though)
         if fields.len() != 12 {
             return Err(serde::de::Error::custom(
                 "ReputationKey must have 11 fields",
