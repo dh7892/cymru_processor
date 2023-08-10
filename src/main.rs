@@ -247,7 +247,7 @@ enum DetectionType {
     Honeypot = 4,
     HumanVerified = 5,
     ActiveProbe = 6,
-    ReportedBy3rdParty = 7,
+    ReportedBy_3rdParty = 7,
     UnverifiedMalwareC2 = 8,
 }
 
@@ -296,7 +296,7 @@ impl<'de> Deserialize<'de> for ReputationKey {
             4 => DetectionType::Honeypot,
             5 => DetectionType::HumanVerified,
             6 => DetectionType::ActiveProbe,
-            7 => DetectionType::ReportedBy3rdParty,
+            7 => DetectionType::ReportedBy_3rdParty,
             8 => DetectionType::UnverifiedMalwareC2,
             _ => return Err(serde::de::Error::custom("Invalid DetectionType")),
         };
@@ -365,7 +365,7 @@ async fn main() {
         encoded_user, encoded_pass, db_host, db_port, db_name
     );
     let db = PgPool::connect(&db_url).await.unwrap();
-    read_gz_file("cut.xml.gz", db).await.unwrap();
+    read_gz_file("data.xml.gz", db).await.unwrap();
 }
 
 #[test]
